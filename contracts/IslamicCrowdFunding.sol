@@ -17,7 +17,7 @@ contract IslamicCrowdFunding {
         bool isClosed;
     }
     ProjectInfo[] public projects;
-    //mapping (ProjectInfo => string) public mappedProjects;
+    
 
     mapping (address => uint256) public contributions;
     Contributor[] public contributors; //Created an array of Contributors
@@ -40,7 +40,7 @@ contract IslamicCrowdFunding {
             name: _name,
             description: _description,
             goal: _goal, deadline:
-            block.timestamp + 90 days,
+            block.timestamp + (90 * 1 days),
             totalContributed: 0,
             profitPool: 0,
             isClosed: false});
@@ -60,7 +60,7 @@ contract IslamicCrowdFunding {
         bool isNewContributor = true;
         
         for (uint i=0; i<projectContributors[projectId].length; i++) {
-            if (projectContributions[projectId][i].addr == msg.sender) {
+            if (projectContributors[projectId][i].addr == msg.sender) {
                 isNewContributor = false;
                 break;
             }
@@ -69,24 +69,27 @@ contract IslamicCrowdFunding {
         projectContributors[projectId].push(addContributors(msg.sender, msg.value));
         }
     }
+
+    function withdrawFunds(uint projectId) external {
+    require(projectContributions[projectId][msg.sender] > 0, "Not a contributor");
+    require(block.timestamp >= projects[projectId].deadline, "Withdrawal time not reached");
+
+    uint256 amount = projectContributions[projectId][msg.sender];
+    projectContributions[projectId][msg.sender] = 0; // Reset to prevent re-withdrawal
+
+    (bool success, ) = msg.sender.call{value: amount}("");
+    require(success, "Transfer failed");
+}
     
-    function withdrawFunds() public {
-        if (block.timestamp < unlockTime[msg.sender]) {
-            revert ("Profit still locked");
-        
-            contributions[msg.sender] -= contributions[msg.sender];
-            projectContributions[projectId][msg.sender] -= projectContributions[projectId][msg.sender]; 
-            totalBalance -= contributions[msg.sender];
-        }
-    }
-    function viewContribution() public view returns (uint) {
+
+    function viewContribution(uint projectId) public view returns (uint) {
         return projectContributions[projectId][msg.sender];
     }
     function viewTotalBalance() public view returns (uint) {
         return totalBalance;
     }
 
-    function addContributors(address addr_name, uint256 amount_contributed) private returns (Contributor) {
+    function addContributors(address addr_name, uint256 amount_contributed) private returns (Contributor memory) {
         Contributor memory newContributor = Contributor(addr_name, amount_contributed);
         contributors.push(newContributor);
         addressToContributor[addr_name] = newContributor;
@@ -95,25 +98,24 @@ contract IslamicCrowdFunding {
 
     function addProfit(uint projectId) external payable {
         require(msg.sender == projects[projectId].creator, "Only the Creator can add Profit");
-        //(bool sent, bytes memory data) = msg.sender.call{value: msg.value}("");
+        (bool sent, ) = msg.sender.call{value: msg.value}("");
         require(sent, "Failed to send Ether");
         projects[projectId].profitPool += msg.value;
     }
 
     function distributeProfit(uint projectId) external payable {
-        uint256 share = (projects[projectId].profitPool)/projects[projectId].totalContributed
+        //uint256 share = (projects[projectId].profitPool)/projects[projectId].totalContributed;
 
         for (uint i=0; i<projectContributors[projectId].length; i++) {
                 //looping through the contributors in project1/2/3 
   
             address memberAddress = projectContributors[projectId][i].addr; // assigned the address to the var. memberAddress 
-            uint amount = projectContributors[projectId][memberAddress]; // assign the amount a user contributed to the variable amount
+            uint amount = projectContributors[projectId][i].amount; // assign the amount a user contributed to the variable amount
             uint share = (amount * projects[projectId].profitPool)/projects[projectId].totalContributed; // calculating each user profit
 
-            (bool success) = payable(memberAddress).call{value: share}("");
+            (bool success, ) = payable(memberAddress).call{value: share}("");
             require(success, "Failed to distribute Profit");
         }
         projects[projectId].totalContributed = 0;
     }
 }
-

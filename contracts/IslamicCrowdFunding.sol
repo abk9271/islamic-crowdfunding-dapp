@@ -2,6 +2,10 @@
 pragma solidity ^0.8.20;
 
 contract IslamicCrowdFunding {
+    modifier onlyCreator(uint projectId) {
+        require(msg.sender == projects[projectId].creator);
+        _;
+    }
     struct Contributor {
         address addr;
         uint256 amount;
@@ -15,7 +19,16 @@ contract IslamicCrowdFunding {
         uint256 totalContributed;
         uint256 profitPool;
         bool isClosed;
+        ProjectStatus status;
     }
+    enum ProjectStatus {
+        Opened, //0
+        Ended,  //1
+        Successful,  //2
+        Failed,   //3
+        Closed   //4
+    }
+
     ProjectInfo[] public projects;
     
 
@@ -34,7 +47,8 @@ contract IslamicCrowdFunding {
     function createProject(
         string memory _name,
         string memory _description,
-        uint256 _goal
+        uint256 _goal,
+        ProjectStatus _status
     ) external {
         ProjectInfo memory newPI = ProjectInfo({creator: msg.sender,
             name: _name,
@@ -43,7 +57,8 @@ contract IslamicCrowdFunding {
             block.timestamp + (90 * 1 days),
             totalContributed: 0,
             profitPool: 0,
-            isClosed: false});
+            isClosed: false,
+            status: _status});
         projects.push(newPI);
     }
 
@@ -52,6 +67,7 @@ contract IslamicCrowdFunding {
     function contribute(uint projectId) public payable{
         require(msg.value > 0, "You can't deposit 0 ETH");
         require(msg.value < projects[projectId].goal, "If you deposit Goal is going to be surpassed");
+        require(projects[projectId].status == ProjectStatus.Opened);
         projectContributions[projectId][msg.sender] += msg.value; 
         totalBalance += msg.value;
         projects[projectId].totalContributed += msg.value;
@@ -70,10 +86,10 @@ contract IslamicCrowdFunding {
         }
     }
 
-    function withdrawFunds(uint projectId) external {
-    require(projectContributions[projectId][msg.sender] > 0, "Not a contributor");
+    function withdrawFunds(uint projectId) external onlyCreator(projectId) {
+    require(projectContributions[projectId][msg.sender] > 0, "No contributions made");
     require(block.timestamp >= projects[projectId].deadline, "Withdrawal time not reached");
-
+    require(projects[projectId].status == ProjectStatus.Successful);
     uint256 amount = projectContributions[projectId][msg.sender];
     projectContributions[projectId][msg.sender] = 0; // Reset to prevent re-withdrawal
 
@@ -100,12 +116,15 @@ contract IslamicCrowdFunding {
         require(msg.sender == projects[projectId].creator, "Only the Creator can add Profit");
         (bool sent, ) = msg.sender.call{value: msg.value}("");
         require(sent, "Failed to send Ether");
+        require(projects[projectId].status == ProjectStatus.Successful, "Campaign not successful");
         projects[projectId].profitPool += msg.value;
+        projects[projectId].status == ProjectStatus.Closed;
     }
 
     function distributeProfit(uint projectId) external payable {
         //uint256 share = (projects[projectId].profitPool)/projects[projectId].totalContributed;
-
+        require(projects[projectId].status == ProjectStatus.Successful, "Campaign not successful");
+        
         for (uint i=0; i<projectContributors[projectId].length; i++) {
                 //looping through the contributors in project1/2/3 
   
@@ -118,4 +137,8 @@ contract IslamicCrowdFunding {
         }
         projects[projectId].totalContributed = 0;
     }
-}
+
+    function getContributor(uint projectId, address _contributor) public view returns(uint256) {
+        return projectContributions[projectId][_contributor];
+    }
+} 
